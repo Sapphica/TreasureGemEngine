@@ -140,5 +140,4 @@ Creative project by **Shawna Flannigan** — part of the Shawna LED Engine Colle
 
 ## 💬 Feedback / Contributions  
 If you're building a LED statue, gem chest, or display case:  
-**Pull requests welcome** — this is engineered with expansion in mind.
 ```
