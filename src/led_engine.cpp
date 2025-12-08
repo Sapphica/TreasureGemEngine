@@ -1,9 +1,8 @@
 #include "led_engine.h"
-#include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
 #include <math.h>
 
-// ---------------- Original User Defines ----------------
+// ---------------- Original Defines ----------------
 #define LED_PIN             4
 #define NUM_LEDS            15
 #define COLOR_ORDER         NEO_GRBW
@@ -20,17 +19,18 @@
 #define FLARE_INTERVAL_MS   3500
 #define BREATH_PERIOD_MS    15000
 
-#define CLUSTER_COUNT 7
-
-const uint8_t clusterStart[CLUSTER_COUNT] = { 
+// ------------------- CLUSTER LAYOUT (2-LED GROUPS) --------------------
+static const uint8_t clusterStart[LedEngine::CLUSTER_COUNT] = { 
   0, 2, 4, 6, 8, 10, 12
 };
 
-const uint8_t clusterSize[CLUSTER_COUNT] = { 
-  2, 2, 2, 2, 2, 2, 3
+static const uint8_t clusterSize[LedEngine::CLUSTER_COUNT] = { 
+  2, 2, 2, 2, 2, 2, 3     // last cluster uses remaining LEDs
 };
 
-#define TEST_MODE 1
+// ---------------------------------------------------------------------
+
+#define TEST_MODE   1
 
 #if TEST_MODE
   #define MULTICOLOR_RUN_MS   (15UL * 1000UL)
@@ -39,29 +39,23 @@ const uint8_t clusterSize[CLUSTER_COUNT] = {
   #define MULTICOLOR_RUN_MS   (15UL * 60UL * 1000UL)
   #define WHITE_ONLY_RUN_MS   (3UL  * 60UL * 1000UL)
 #endif
-// -------------------------------------------------------
-
-Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, COLOR_ORDER + NEO_KHZ800);
-
-struct ClusterState {
-  unsigned long nextFlash;
-  unsigned long startTime;
-  bool flashing;
-  float hue;
-  float hueDrift;
-  float facetAngle;
-  uint8_t flashMode;
-};
-
-ClusterState clusters[CLUSTER_COUNT];
-
-bool whiteMode = false;
-unsigned long modeStart = 0;
 
 // -------------------------------------------------------
-// HSV → RGB  (unchanged)
+// ctor – just wires up the strip + default state
 // -------------------------------------------------------
-void hsvToRgb(float h, float s, float v, uint8_t &r, uint8_t &g, uint8_t &b) {
+LedEngine::LedEngine()
+    : strip(NUM_LEDS, LED_PIN, COLOR_ORDER + NEO_KHZ800),
+      whiteMode(false),
+      modeStart(0),
+      lastFlare(0),
+      lastReset(0)
+{
+}
+
+// -------------------------------------------------------
+// HSV → RGB  (same as original)
+// -------------------------------------------------------
+void LedEngine::hsvToRgb(float h, float s, float v, uint8_t &r, uint8_t &g, uint8_t &b) {
   float c = v * s;
   float x = c * (1 - fabs(fmod(h / 60.0, 2) - 1));
   float m = v - c;
@@ -80,7 +74,9 @@ void hsvToRgb(float h, float s, float v, uint8_t &r, uint8_t &g, uint8_t &b) {
 }
 
 // -------------------------------------------------------
-void assignNewPalette() {
+// Assign new palette (same logic, now a method)
+// -------------------------------------------------------
+void LedEngine::assignNewPalette() {
   unsigned long now = millis();
   for (int c = 0; c < CLUSTER_COUNT; c++) {
     clusters[c].flashing   = false;
@@ -92,7 +88,7 @@ void assignNewPalette() {
   }
 }
 
-void triggerClusterFlare() {
+void LedEngine::triggerClusterFlare() {
   unsigned long now = millis();
   int flareCount = random(1, 3);
   for (int n = 0; n < flareCount; n++) {
@@ -104,9 +100,9 @@ void triggerClusterFlare() {
 }
 
 // -------------------------------------------------------
-// engine_init() = your original setup()
+// begin() = your original setup()
 // -------------------------------------------------------
-void engine_init() {
+void LedEngine::begin() {
   strip.begin();
   strip.show();
   randomSeed(analogRead(0));
@@ -115,12 +111,12 @@ void engine_init() {
 }
 
 // -------------------------------------------------------
-// engine_update() = your original loop()
+// update() = your original loop()
 // -------------------------------------------------------
-void engine_update() {
+void LedEngine::update() {
   unsigned long now = millis();
 
-  // MODE switching
+  // MODE switching (unchanged)
   unsigned long elapsed = now - modeStart;
   if (!whiteMode && elapsed >= MULTICOLOR_RUN_MS) {
     whiteMode = true;
@@ -132,9 +128,10 @@ void engine_update() {
   }
 
   float breathBase = (2 * PI * now) / (float)BREATH_PERIOD_MS;
+
+  // ★ 2× shimmer speed
   float facetBaseDeg = (float)now / 12.0f;
 
-  static unsigned long lastFlare = 0;
   long flareJitter = random(-1000, 1000);
   if (now - lastFlare > FLARE_INTERVAL_MS + flareJitter) {
     triggerClusterFlare();
@@ -142,9 +139,8 @@ void engine_update() {
   }
 
   // -------------------------------------------------------
-  // PER-CLUSTER LOGIC
-  // (IDENTICAL TO ORIGINAL)
-  // -------------------------------------------------------
+  // PER-CLUSTER LOGIC  (identical, just using members)
+// -------------------------------------------------------
   for (int c = 0; c < CLUSTER_COUNT; c++) {
 
     clusters[c].hue += clusters[c].hueDrift;
@@ -195,7 +191,7 @@ void engine_update() {
     float brightnessRGB = pow(brightness, 0.85f);
 
     // -------------------------------------------------------
-    // PER-LED WITHIN CLUSTER (UNCHANGED)
+    // PER-LED WITHIN CLUSTER
     // -------------------------------------------------------
     uint8_t start = clusterStart[c];
     uint8_t count = clusterSize[c];
@@ -231,7 +227,9 @@ void engine_update() {
       gF = constrain(gF, 0, 255);
       bF = constrain(bF, 0, 255);
 
-      r = rF; g = gF; b = bF;
+      r = (uint8_t)rF;
+      g = (uint8_t)gF;
+      b = (uint8_t)bF;
 
       if (whiteMode) {
         r = g = b = 0;
@@ -247,7 +245,6 @@ void engine_update() {
 
   strip.show();
 
-  static unsigned long lastReset = 0;
   if (now - lastReset > COLOR_SHIFT_TIME) {
     assignNewPalette();
     lastReset = now;
