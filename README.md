@@ -12,12 +12,11 @@ _A cinematic LED engine powering multi-cluster gemstone lighting with shimmer, f
 
 ---
 
-## ✨ Demo  
-<div align="center">
+## ✨ Animated Showcase  
 
-### **Animated Preview**
-![Demo](assets/demo.gif)
-
+<p align="center">
+  <img src="assets/treasure_demo.gif" alt="Treasure LED Engine Demo" style="border-radius:12px;">
+</p>
 </div>
 
 ---
